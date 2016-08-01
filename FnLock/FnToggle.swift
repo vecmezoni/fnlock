@@ -35,27 +35,27 @@ func createConnect() throws -> io_connect_t {
     let masterPort = UnsafeMutablePointer<mach_port_t>.alloc(1)
     let iterator = UnsafeMutablePointer<io_iterator_t>.alloc(1)
     let connect = UnsafeMutablePointer<io_connect_t>.alloc(1)
-    
+
     guard IOMasterPort(bootstrap_port, masterPort) == KERN_SUCCESS else {
         throw IOServiceError.FailedToGetMasterPort
     }
-    
+
     guard let classToMatch = IOServiceMatching(kIOHIDSystemClass) else {
         throw IOServiceError.FailedToCreateMatchingDictionary
     }
-    
+
     guard IOServiceGetMatchingServices(masterPort.memory, classToMatch, iterator) == KERN_SUCCESS else {
         throw IOServiceError.FailedToCreateMatchingDictionary
     }
-    
+
     let nextObject = IOIteratorNext(iterator.memory)
-    
+
     IOObjectRelease(iterator.memory)
-    
+
     guard IOServiceOpen(nextObject, mach_task_self_, UInt32(kIOHIDParamConnectType), connect) == KERN_SUCCESS else {
         throw IOServiceError.FailedToCreateMatchingDictionary
     }
-    
+
     return connect.memory
 }
 
@@ -75,16 +75,16 @@ func getSetting() throws -> Bool {
     let connect = try createConnect()
     let result = UnsafeMutablePointer<Int>.alloc(1)
     let actualSize = UnsafeMutablePointer<IOByteCount>.alloc(1)
-    
+
     guard IOHIDGetParameter(connect, kIOHIDFKeyModeKey, IOByteCount(sizeof(Int)), result, actualSize) == KERN_SUCCESS else {
         IOServiceClose(connect)
         throw IOServiceError.FailedToGetSetting
     }
-    
+
     NSLog("FKeyModeKey is %d", result.memory)
 
     IOServiceClose(connect)
-    
+
     return Bool(result.memory)
 }
 
