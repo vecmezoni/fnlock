@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let iconOn = NSImage(named: "icon-on")
 
     func applicationDidFinishLaunching(aNotification: NSNotification) {
+        deduplicateRunningInstances()
 
         statusItem.menu = menu
 
@@ -34,5 +35,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.image = state ? iconOn : iconOff
     }
 
+    func deduplicateRunningInstances() {
+        if NSRunningApplication.runningApplicationsWithBundleIdentifier(NSBundle.mainBundle().bundleIdentifier!).count > 1 {
+            let alert = NSAlert()
+            alert.messageText = "Another copy of fnlock is already running."
+            alert.informativeText = "This copy will now quit."
+            alert.runModal()
+            NSApplication.sharedApplication().terminate(self)
+        }
+    }
 
 }
