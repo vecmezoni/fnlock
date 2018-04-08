@@ -5,29 +5,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @IBOutlet weak var menu: NSMenu!
 
-    @IBAction func quitClicked(sender: AnyObject) {
-        NSApplication.sharedApplication().terminate(self)
+    @IBAction func quitClicked(_ sender: Any) {
+        NSApplication.shared.terminate(self)
     }
 
-    let statusItem = NSStatusBar.systemStatusBar().statusItemWithLength(NSVariableStatusItemLength)
-    let iconOff = NSImage(named: "icon-off")
-    let iconOn = NSImage(named: "icon-on")
+    let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    let iconOff = NSImage(named: NSImage.Name(rawValue: "icon-off"))
+    let iconOn = NSImage(named: NSImage.Name(rawValue: "icon-on"))
 
-    func applicationDidFinishLaunching(aNotification: NSNotification) {
+    func applicationDidFinishLaunching(_ aNotification: Notification) {
         deduplicateRunningInstances()
 
         statusItem.menu = menu
 
-        iconOff?.template = true
-        iconOn?.template = true
+        iconOff?.isTemplate = true
+        iconOn?.isTemplate = true
 
         statusItem.image = iconOn
 
         let fnLock = FnLock.singleton
-        let daemon = NSThread(target: fnLock, selector: #selector(NSRunLoop.run), object: nil)
+        let daemon = Thread(target: fnLock, selector: #selector(FnLock.run), object: nil)
 
         fnLock.onStateChange = changeIcon
-        changeIcon(fnLock.state)
+        changeIcon(state: fnLock.state)
         daemon.start()
     }
 
@@ -36,12 +36,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func deduplicateRunningInstances() {
-        if NSRunningApplication.runningApplicationsWithBundleIdentifier(NSBundle.mainBundle().bundleIdentifier!).count > 1 {
+        if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier!).count > 1 {
             let alert = NSAlert()
             alert.messageText = "Another copy of fnlock is already running."
             alert.informativeText = "This copy will now quit."
             alert.runModal()
-            NSApplication.sharedApplication().terminate(self)
+            NSApplication.shared.terminate(self)
         }
     }
 

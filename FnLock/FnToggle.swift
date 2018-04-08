@@ -24,68 +24,64 @@
 
 import Foundation
 
-enum IOServiceError: ErrorType {
-    case FailedToGetMasterPort
-    case FailedToCreateMatchingDictionary
-    case FailedToChangeSetting
-    case FailedToGetSetting
-}
-
-func createConnect() throws -> io_connect_t {
-    let masterPort = UnsafeMutablePointer<mach_port_t>.alloc(1)
-    let iterator = UnsafeMutablePointer<io_iterator_t>.alloc(1)
-    let connect = UnsafeMutablePointer<io_connect_t>.alloc(1)
-
-    guard IOMasterPort(bootstrap_port, masterPort) == KERN_SUCCESS else {
-        throw IOServiceError.FailedToGetMasterPort
-    }
-
-    guard let classToMatch = IOServiceMatching(kIOHIDSystemClass) else {
-        throw IOServiceError.FailedToCreateMatchingDictionary
-    }
-
-    guard IOServiceGetMatchingServices(masterPort.memory, classToMatch, iterator) == KERN_SUCCESS else {
-        throw IOServiceError.FailedToCreateMatchingDictionary
-    }
-
-    let nextObject = IOIteratorNext(iterator.memory)
-
-    IOObjectRelease(iterator.memory)
-
-    guard IOServiceOpen(nextObject, mach_task_self_, UInt32(kIOHIDParamConnectType), connect) == KERN_SUCCESS else {
-        throw IOServiceError.FailedToCreateMatchingDictionary
-    }
-
-    return connect.memory
+enum IOServiceError: Error {
+    case failedToGetMasterPort
+    case failedToCreateMatchingDictionary
+    case failedToChangeSetting
+    case failedToGetSetting
 }
 
 func changeSetting(setting: Bool) throws {
-    let connect = try createConnect()
-    let newValue = UnsafeMutablePointer<Int>.alloc(1)
-    newValue.memory = Int(setting)
-    NSLog("setting FKeyModeKey value to be %d", newValue.memory)
-    guard IOHIDSetParameter(connect, kIOHIDFKeyModeKey, newValue, IOByteCount(sizeof(Int))) == KERN_SUCCESS else {
-        IOServiceClose(connect)
-        throw IOServiceError.FailedToChangeSetting
+    var enabled = setting ? UInt32(0) : UInt32(1)
+
+    var connect: io_connect_t = 0
+
+    let classToMatch = IOServiceMatching(kIOHIDSystemClass)
+
+    let service = IOServiceGetMatchingService(kIOMasterPortDefault, classToMatch)
+
+    guard IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType), &connect) == kIOReturnSuccess else {
+        NSLog("Failed to changeSetting: failed to open service")
+        throw IOServiceError.failedToChangeSetting
     }
-    IOServiceClose(connect)
+
+    guard IOHIDSetParameter(connect, kIOHIDFKeyModeKey as CFString, &enabled, 1) == kIOReturnSuccess else {
+        NSLog("Failed to changeSetting: failed to set parameter")
+        throw IOServiceError.failedToChangeSetting
+    }
+
+    guard IOServiceClose(connect) == kIOReturnSuccess else {
+        NSLog("Failed to changeSetting: failed to close service")
+        throw IOServiceError.failedToChangeSetting
+    }
 }
 
 func getSetting() throws -> Bool {
-    let connect = try createConnect()
-    let result = UnsafeMutablePointer<Int>.alloc(1)
-    let actualSize = UnsafeMutablePointer<IOByteCount>.alloc(1)
+    var connect: io_connect_t = 0
 
-    guard IOHIDGetParameter(connect, kIOHIDFKeyModeKey, IOByteCount(sizeof(Int)), result, actualSize) == KERN_SUCCESS else {
-        IOServiceClose(connect)
-        throw IOServiceError.FailedToGetSetting
+    let classToMatch = IOServiceMatching(kIOHIDSystemClass)
+
+    let service = IOServiceGetMatchingService(kIOMasterPortDefault, classToMatch)
+
+    guard IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType), &connect) == kIOReturnSuccess else {
+        NSLog("Failed to getSetting: failed to open service")
+        throw IOServiceError.failedToGetSetting
     }
 
-    NSLog("FKeyModeKey is %d", result.memory)
+    var value = UInt32(0)
+    var actualSize = UInt32(0)
 
-    IOServiceClose(connect)
+    guard IOHIDGetParameter(connect, kIOHIDFKeyModeKey as CFString, 1, &value, &actualSize) == kIOReturnSuccess else {
+        NSLog("Failed to getSetting: failed to get parameter")
+        throw IOServiceError.failedToGetSetting
+    }
 
-    return Bool(result.memory)
+    guard IOServiceClose(connect) == kIOReturnSuccess else {
+        NSLog("Failed to getSetting: failed to close service")
+        throw IOServiceError.failedToGetSetting
+    }
+
+    return value == 0
 }
 
 func getSettingSafe() -> Bool {
@@ -97,7 +93,7 @@ func getSettingSafe() -> Bool {
 }
 
 func saveState() {
-    CFPreferencesSetAppValue("fnState", kCFBooleanFalse, "com.apple.keyboard")
-    CFPreferencesAppSynchronize("com.apple.keyboard")
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDistributedCenter(), "com.apple.keyboard.fnstatedidchange", nil, nil, true)
+    CFPreferencesSetAppValue("fnState" as CFString, kCFBooleanFalse, "com.apple.keyboard" as CFString)
+    CFPreferencesAppSynchronize("com.apple.keyboard" as CFString)
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDistributedCenter(), CFNotificationName.init(rawValue: "com.apple.keyboard.fnstatedidchange" as CFString), nil, nil, true)
 }

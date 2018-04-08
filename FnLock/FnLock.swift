@@ -1,12 +1,6 @@
 import IOKit.hid
 import Foundation
 
-enum IOHIDError: ErrorType {
-    case FailedToOpenManager
-    case FailedToGetKeyboard
-    case FailedToGetLed
-}
-
 class FnLock: NSObject {
     static let singleton = FnLock()
 
@@ -18,75 +12,65 @@ class FnLock: NSObject {
     var state = getSettingSafe()
     var keyboard: IOHIDDevice?
     var led: IOHIDElement?
-    var onStateChange: (Bool -> ())? = nil
+    var onStateChange: ((Bool) -> ())? = nil
 
     override init() {
         super.init()
-        keyboard = try! getKeyboard()
-        led = try! getLed()
+        keyboard = getKeyboard()
+        led = getLed()
     }
 
     class func setupManager() throws -> IOHIDManager {
-        let manager = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDManagerOptionNone.rawValue).takeRetainedValue()
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
 
-        guard IOHIDManagerOpen(manager, kIOHIDManagerOptionNone.rawValue) == kIOReturnSuccess else {
-            throw IOHIDError.FailedToOpenManager
-        }
+        IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
 
         return manager
     }
 
-    func getKeyboard() throws -> IOHIDDevice {
-        IOHIDManagerSetDeviceMatching(manager, keyboardDictionary)
+    func getKeyboard() -> IOHIDDevice {
+        IOHIDManagerSetDeviceMatching(manager, keyboardDictionary as CFDictionary)
 
-        let matchingDevices = IOHIDManagerCopyDevices(manager).takeRetainedValue() as NSSet
+        let matchingDevices = IOHIDManagerCopyDevices(manager) as! NSSet
 
-        guard let object = matchingDevices.anyObject() where object is IOHIDDevice else {
-            throw IOHIDError.FailedToGetKeyboard
-        }
-
-        return object as! IOHIDDevice
+        return matchingDevices.anyObject() as! IOHIDDevice
     }
 
-    func getLed() throws -> IOHIDElement {
-        let elements = IOHIDDeviceCopyMatchingElements(keyboard, ledDictionary, 0).takeRetainedValue()
+    func getLed() -> IOHIDElement {
+        let elements = IOHIDDeviceCopyMatchingElements(keyboard!, ledDictionary as CFDictionary, 0) as! Array<IOHIDElement>
 
-        guard IOHIDDeviceOpen(keyboard, IOOptionBits(kIOHIDOptionsTypeSeizeDevice)) == kIOReturnSuccess else {
-            throw IOHIDError.FailedToGetLed
-        }
+        IOHIDDeviceOpen(keyboard!, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
 
-        let arrayValue: UnsafePointer<Void> = CFArrayGetValueAtIndex(elements, 0)
-
-        return Unmanaged<IOHIDElement>.fromOpaque(COpaquePointer(arrayValue)).takeRetainedValue()
+        return elements[0]
     }
 
     func toggleLed(state: Bool) {
-        let value = IOHIDValueCreateWithIntegerValue(kCFAllocatorDefault, led, 0, state ? 1 : 0).takeRetainedValue()
-        IOHIDDeviceSetValue(keyboard, led, value)
+        let value = IOHIDValueCreateWithIntegerValue(kCFAllocatorDefault, led!, 0, state ? 1 : 0)
+        IOHIDDeviceSetValue(keyboard!, led!, value)
     }
 
-    func updateLed() {
+    @objc func updateLed() {
         if self.state {
-            toggleLed(self.state)
+            toggleLed(state: self.state)
         }
     }
 
-    func run() {
-        let ctx = unsafeBitCast(self, UnsafeMutablePointer<Void>.self)
+    @objc func run() {
+        let ctx = unsafeBitCast(self, to: UnsafeMutableRawPointer.self)
 
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode)
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
 
-        IOHIDDeviceRegisterInputValueCallback(keyboard, { (context, result, sender, value) in
+        IOHIDDeviceRegisterInputValueCallback(keyboard!, { (context, result, sender, value) in
 
-            let fnLock = unsafeBitCast(context, FnLock.self)
+            let fnLock = unsafeBitCast(context, to: FnLock.self)
 
             let element = IOHIDValueGetElement(value)
             let elementValue = IOHIDValueGetIntegerValue(value)
-            let usage = Int(IOHIDElementGetUsage(element.takeUnretainedValue()))
+            let usage = Int(IOHIDElementGetUsage(element))
             if usage == kHIDUsage_KeyboardCapsLock && elementValue == 0 {
                 do {
-                    try changeSetting(!fnLock.state)
-                    fnLock.toggleLed(!fnLock.state)
+                    try changeSetting(setting: !fnLock.state)
+                    fnLock.toggleLed(state: !fnLock.state)
                     fnLock.state = try getSetting()
                     saveState()
                     fnLock.onStateChange!(fnLock.state)
@@ -98,9 +82,9 @@ class FnLock: NSObject {
             }, ctx)
 
         // TODO: I have no idea why someone switches caps lock led off while user is switching windows
-        NSTimer.scheduledTimerWithTimeInterval(0.05, target: self, selector: #selector(self.updateLed), userInfo: nil, repeats: true)
+        Timer.scheduledTimer(timeInterval: 0.05, target: self, selector: #selector(self.updateLed), userInfo: nil, repeats: true)
 
-        NSRunLoop.currentRunLoop().run()
+        RunLoop.current.run()
     }
 
 }
